@@ -1,17 +1,26 @@
-# This dockerfile utilizes components licensed by their respective owners/authors.
-# Prior to utilizing this file or resulting images please review the respective licenses at: https://docs.python.org/3/license.html
+# escape=`
+FROM python:3.6-windowsservercore AS python
 
-FROM mcr.microsoft.com/windows/servercore:ltsc2022
+FROM mcr.microsoft.com/windows/nanoserver:10.0.14393.2068
 
-LABEL Description="Python" Vendor="Python Software Foundation" Version="3.10.0"
+COPY --from=python /Python /Python
 
-RUN powershell.exe -Command \
-    $ErrorActionPreference = 'Stop'; \
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; \
-    wget https://www.python.org/ftp/python/3.10.0/python-3.10.0.exe -OutFile c:\python-3.10.0.exe ; \
-    Start-Process c:\python-3.10.0.exe -ArgumentList '/quiet InstallAllUsers=1 PrependPath=1' -Wait ; \
-    Remove-Item c:\python-3.10.0.exe -Force
+SHELL ["powershell", "-Command", "$ErrorActionPreference = 'Stop'; $ProgressPreference = 'SilentlyContinue';"]
 
-RUN echo print("Hello World!") > c:\hello.py
+ENV PYTHON_VERSION 3.6.1
+ENV PYTHON_PIP_VERSION 9.0.1
 
-CMD ["py", "c:/hello.py"]
+RUN $env:PATH = 'C:\Python;C:\Python\Scripts;{0}' -f $env:PATH ; `
+    Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Session Manager\Environment\' -Name Path -Value $env:PATH ; `
+    mkdir $env:APPDATA\Python\Python36\site-packages ; `
+    Invoke-WebRequest 'https://bootstrap.pypa.io/get-pip.py' -OutFile 'get-pip.py' -UseBasicParsing ; `
+    $replace = ('import tempfile{0}import site{0}site.getusersitepackages()' -f [char][int]10) ; `
+    Get-Content get-pip.py | Foreach-Object { $_ -replace 'import tempfile', $replace } | Out-File -Encoding Ascii getpip.py ; `
+    $pipInstall = ('pip=={0}' -f $env:PYTHON_PIP_VERSION) ; `
+    python getpip.py $pipInstall ; `
+    Remove-Item get-pip.py ; `
+    Remove-Item getpip.py
+
+RUN pip install --no-cache-dir virtualenv
+
+CMD [ "python.exe" ]
